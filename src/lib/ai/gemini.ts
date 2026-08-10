@@ -2,6 +2,8 @@ import { desc, eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { withGeminiModel } from "../geminiModel";
 import {
+  SUGGEST_BATCH_SIZE,
+  chunkTargets,
   filterUnlockedTargets,
   mealDraftsResponseSchema,
   type MealDraft,
@@ -15,6 +17,91 @@ import {
   extractJson,
   type DraftAssignment,
 } from "./prompt";
+
+function assignDraftsToTargets(
+  targets: SlotTarget[],
+  drafts: MealDraft[],
+): DraftAssignment[] {
+  const used = new Set<number>();
+  const assignments: DraftAssignment[] = [];
+
+  for (let i = 0; i < targets.length; i++) {
+    const target = targets[i];
+    let draftIndex = drafts.findIndex(
+      (d, idx) => !used.has(idx) && d.mealType === target.mealType,
+    );
+    if (draftIndex < 0) {
+      draftIndex = drafts.findIndex((_, idx) => !used.has(idx));
+    }
+    if (draftIndex < 0) {
+      draftIndex = Math.min(i, drafts.length - 1);
+    }
+    used.add(draftIndex);
+    const draft = drafts[draftIndex];
+    assignments.push({
+      date: target.date,
+      mealType: target.mealType,
+      draft: { ...draft, mealType: target.mealType as MealDraft["mealType"] },
+    });
+  }
+
+  return assignments;
+}
+
+async function generateDraftsForChunk(input: {
+  targets: SlotTarget[];
+  likes: string[];
+  dislikes: string[];
+  allergies: string[];
+  defaultServings: number;
+  maxCookTimeMinutes?: number | null;
+  kitchenNotes?: string | null;
+  recentMealTitles: string[];
+  favoriteTitles: string[];
+  thumbsUpTitles: string[];
+  thumbsDownTitles: string[];
+  userContext?: string;
+}): Promise<MealDraft[]> {
+  const prompt = buildMealPlanPrompt({
+    likes: input.likes,
+    dislikes: input.dislikes,
+    allergies: input.allergies,
+    defaultServings: input.defaultServings,
+    maxCookTimeMinutes: input.maxCookTimeMinutes,
+    kitchenNotes: input.kitchenNotes,
+    recentMealTitles: input.recentMealTitles,
+    favoriteTitles: input.favoriteTitles,
+    thumbsUpTitles: input.thumbsUpTitles,
+    thumbsDownTitles: input.thumbsDownTitles,
+    userContext: input.userContext,
+    targets: input.targets.map((t) => ({
+      date: t.date,
+      mealType: t.mealType,
+    })),
+  });
+
+  const result = await withGeminiModel({}, async (model) =>
+    model.generateContent(prompt),
+  );
+  const text = result.response.text();
+  let parsed: unknown;
+  try {
+    parsed = extractJson(text);
+  } catch (error) {
+    console.error("[ai] parse failure", text);
+    throw new Error("Couldn't parse suggestion — try again");
+  }
+
+  const validated = mealDraftsResponseSchema.safeParse(
+    Array.isArray(parsed) ? { meals: parsed } : parsed,
+  );
+  if (!validated.success) {
+    console.error("[ai] zod failure", validated.error);
+    throw new Error("Couldn't parse suggestion — try again");
+  }
+
+  return validated.data.meals;
+}
 
 export async function generateMealDrafts(input: {
   userId: string;
@@ -54,54 +141,33 @@ export async function generateMealDrafts(input: {
     .map((r) => mealById.get(r.mealId)?.title)
     .filter(Boolean) as string[];
 
-  const prompt = buildMealPlanPrompt({
+  const recentMealTitles = library.slice(0, 14).map((m) => m.title);
+  const favoriteTitles = library.filter((m) => m.favorited).map((m) => m.title);
+  const baseContext = {
     likes: profile.likes ?? [],
     dislikes: profile.dislikes ?? [],
     allergies: profile.allergies ?? [],
     defaultServings: profile.defaultServings,
     maxCookTimeMinutes: profile.maxCookTimeMinutes,
     kitchenNotes: profile.kitchenNotes,
-    recentMealTitles: library.slice(0, 14).map((m) => m.title),
-    favoriteTitles: library.filter((m) => m.favorited).map((m) => m.title),
+    favoriteTitles,
     thumbsUpTitles,
     thumbsDownTitles,
     userContext: input.userContext,
-    targets: targets.map((t) => ({ date: t.date, mealType: t.mealType })),
-  });
+  };
 
-  const result = await withGeminiModel({}, async (model) =>
-    model.generateContent(prompt),
-  );
-  const text = result.response.text();
-  let parsed: unknown;
-  try {
-    parsed = extractJson(text);
-  } catch (error) {
-    console.error("[ai] parse failure", text);
-    throw new Error("Couldn't parse suggestion — try again");
-  }
-
-  const validated = mealDraftsResponseSchema.safeParse(
-    Array.isArray(parsed) ? { meals: parsed } : parsed,
-  );
-  if (!validated.success) {
-    console.error("[ai] zod failure", validated.error);
-    throw new Error("Couldn't parse suggestion — try again");
-  }
-
-  const drafts = validated.data.meals;
   const assignments: DraftAssignment[] = [];
+  const plannedTitles = [...recentMealTitles];
 
-  for (let i = 0; i < targets.length; i++) {
-    const target = targets[i];
-    const draft: MealDraft =
-      drafts.find((d) => d.mealType === target.mealType && !assignments.some((a) => a.draft === d)) ||
-      drafts[Math.min(i, drafts.length - 1)];
-    assignments.push({
-      date: target.date,
-      mealType: target.mealType,
-      draft: { ...draft, mealType: target.mealType as MealDraft["mealType"] },
+  for (const chunk of chunkTargets(targets, SUGGEST_BATCH_SIZE)) {
+    const drafts = await generateDraftsForChunk({
+      ...baseContext,
+      targets: chunk,
+      recentMealTitles: plannedTitles.slice(0, 20),
     });
+    const chunkAssignments = assignDraftsToTargets(chunk, drafts);
+    assignments.push(...chunkAssignments);
+    plannedTitles.unshift(...chunkAssignments.map((a) => a.draft.title));
   }
 
   return assignments;

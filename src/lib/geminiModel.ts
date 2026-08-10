@@ -1,7 +1,9 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
+/** Preferred default — 2.5 models are blocked for many newer API keys. */
 export const DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite";
 
+/** Tried in order when a model is blocked/unavailable for the API key. */
 const FALLBACK_MODELS = [
   "gemini-3.1-flash-lite",
   "gemini-3.5-flash-lite",
@@ -32,6 +34,27 @@ function isModelUnavailableError(error: unknown) {
   );
 }
 
+function isQuotaError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("429") ||
+    message.includes("RESOURCE_EXHAUSTED") ||
+    message.includes("Too Many Requests") ||
+    message.includes("exceeded your current quota")
+  );
+}
+
+function hasGoogleSearch(options: ModelOptions) {
+  return Boolean(
+    options.tools?.some(
+      (tool) =>
+        tool &&
+        typeof tool === "object" &&
+        ("googleSearch" in tool || "google_search" in tool),
+    ),
+  );
+}
+
 export function getGeminiClient() {
   const key = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   if (!key) {
@@ -46,6 +69,10 @@ type ModelOptions = {
   systemInstruction?: string;
 };
 
+/**
+ * Run a Gemini call, falling back across models when Google blocks one for new keys.
+ * If Google Search grounding hits quota (common on free tier), retries without Search.
+ */
 export async function withGeminiModel<T>(
   options: ModelOptions,
   run: (
@@ -55,16 +82,33 @@ export async function withGeminiModel<T>(
   const client = getGeminiClient();
   const candidates = modelCandidates();
   let lastError: unknown;
+  let skipSearch = false;
 
-  for (const modelName of candidates) {
+  for (let i = 0; i < candidates.length; i++) {
+    const modelName = candidates[i];
+    const useOptions =
+      skipSearch || !hasGoogleSearch(options)
+        ? { ...options, tools: undefined }
+        : options;
+
     try {
       const model = client.getGenerativeModel({
         model: modelName,
-        ...options,
+        ...useOptions,
       });
       return await run(model);
     } catch (error) {
       lastError = error;
+
+      if (!skipSearch && hasGoogleSearch(options) && isQuotaError(error)) {
+        console.warn(
+          `[gemini] Google Search grounding hit quota on ${modelName}; retrying without Search.`,
+        );
+        skipSearch = true;
+        i -= 1; // retry same model without Search
+        continue;
+      }
+
       if (!isModelUnavailableError(error)) {
         throw error;
       }

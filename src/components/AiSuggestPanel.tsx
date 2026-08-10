@@ -111,7 +111,11 @@ export function AiSuggestPanel({
           disabled={loading || unlockedCount === 0}
           className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
         >
-          {loading ? "Thinking…" : label}
+          {loading
+          ? unlockedCount > 3
+            ? "Planning week…"
+            : "Thinking…"
+          : label}
         </button>
       </div>
       {unlockedCount === 0 ? (

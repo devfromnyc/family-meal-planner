@@ -3,6 +3,9 @@ import { getSessionUser } from "@/lib/auth";
 import { generateMealDrafts } from "@/lib/ai/gemini";
 import type { SlotTarget } from "@/lib/mealSchema";
 
+/** Week plans call Gemini in day-sized batches — allow enough time on Vercel. */
+export const maxDuration = 60;
+
 export async function POST(request: Request) {
   const session = await getSessionUser();
   if (!session) {

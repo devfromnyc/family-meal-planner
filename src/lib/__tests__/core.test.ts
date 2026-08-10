@@ -6,6 +6,7 @@ import {
   weekDatesFromMonday,
 } from "../dates";
 import {
+  chunkTargets,
   filterUnlockedTargets,
   mealDraftSchema,
   mealDraftsResponseSchema,
@@ -59,6 +60,15 @@ describe("filterUnlockedTargets", () => {
   });
 });
 
+describe("chunkTargets", () => {
+  it("splits a week of slots into day-sized batches", () => {
+    const slots = Array.from({ length: 21 }, (_, i) => i);
+    expect(chunkTargets(slots, 3)).toHaveLength(7);
+    expect(chunkTargets(slots, 3)[0]).toEqual([0, 1, 2]);
+    expect(chunkTargets([1, 2, 3, 4], 3)).toEqual([[1, 2, 3], [4]]);
+  });
+});
+
 describe("mealDraftSchema", () => {
   const valid = {
     title: "Soft scrambled eggs",
@@ -85,5 +95,33 @@ describe("mealDraftSchema", () => {
   it("parses a meals wrapper", () => {
     const parsed = mealDraftsResponseSchema.parse({ meals: [valid] });
     expect(parsed.meals).toHaveLength(1);
+  });
+
+  it("coerces numeric ingredient quantities from Gemini", () => {
+    const parsed = mealDraftSchema.parse({
+      ...valid,
+      ingredients: [
+        { name: "eggs", quantity: 4, unit: "large" },
+        { name: "milk", quantity: 2, unit: "tbsp" },
+      ],
+      cookTimeMinutes: "10",
+      servings: "2",
+    });
+    expect(parsed.ingredients[0].quantity).toBe("4");
+    expect(parsed.ingredients[1].quantity).toBe("2");
+    expect(parsed.cookTimeMinutes).toBe(10);
+    expect(parsed.servings).toBe(2);
+  });
+
+  it("normalizes Gemini skillLevel labels", () => {
+    expect(
+      mealDraftSchema.parse({ ...valid, skillLevel: "Easy" }).skillLevel,
+    ).toBe("beginner");
+    expect(
+      mealDraftSchema.parse({ ...valid, skillLevel: "Beginner" }).skillLevel,
+    ).toBe("beginner");
+    expect(
+      mealDraftSchema.parse({ ...valid, skillLevel: "Medium" }).skillLevel,
+    ).toBe("intermediate");
   });
 });
