@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 
 export function AuthShell({
   title,
@@ -13,14 +14,16 @@ export function AuthShell({
 }) {
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
-      <div className="relative hidden min-h-screen overflow-hidden bg-[var(--ink)] lg:block">
-        <div
-          className="absolute inset-0 opacity-80"
-          style={{
-            background:
-              "radial-gradient(600px 320px at 20% 10%, rgba(196,92,38,0.45), transparent 60%), radial-gradient(500px 280px at 90% 90%, rgba(92,107,60,0.4), transparent 55%)",
-          }}
+      <div className="relative hidden min-h-screen lg:block">
+        <Image
+          src="/images/landing-hero.png"
+          alt=""
+          fill
+          priority
+          className="object-cover"
+          sizes="50vw"
         />
+        <div className="absolute inset-0 bg-gradient-to-t from-[var(--ink)]/80 via-[var(--ink)]/40 to-transparent" />
         <div className="absolute inset-x-0 bottom-0 p-10">
           <p className="font-[family-name:var(--font-display)] text-4xl text-white">
             Family Meal Planner

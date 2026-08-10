@@ -12,6 +12,7 @@
   --olive: #5c6b3c;
   --olive-soft: #e4ead8;
   --shadow: 0 10px 30px rgba(28, 42, 36, 0.08);
+  --shadow-lg: 0 18px 40px rgba(28, 42, 36, 0.14);
   --background: var(--paper);
   --foreground: var(--ink);
 }
