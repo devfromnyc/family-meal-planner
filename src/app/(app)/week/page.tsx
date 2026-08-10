@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AiSuggestPanel } from "@/components/AiSuggestPanel";
+import { GroceryPreviewPanel } from "@/components/GroceryPreviewPanel";
 import {
   addDaysIso,
   formatLocalDate,
@@ -138,6 +139,8 @@ export default function WeekPage() {
         targets={weekTargets}
         onAccepted={load}
       />
+
+      <GroceryPreviewPanel startDate={dates[0]} endDate={dates[6]} />
 
       <div className="space-y-4">
         {dates.map((date) => (

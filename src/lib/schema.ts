@@ -117,3 +117,35 @@ export const planSlots = pgTable(
   },
   (t) => [unique().on(t.userId, t.date, t.mealType)],
 );
+
+export const groceryLists = pgTable("grocery_lists", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => profiles.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const groceryListItems = pgTable("grocery_list_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  listId: uuid("list_id")
+    .notNull()
+    .references(() => groceryLists.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  quantity: text("quantity").notNull().default(""),
+  unit: text("unit").notNull().default(""),
+  mealTitles: jsonb("meal_titles").$type<string[]>().notNull().default([]),
+  checked: boolean("checked").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});

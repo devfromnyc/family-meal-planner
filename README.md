@@ -11,6 +11,7 @@ Shared household meal planner for breakfast, lunch, and dinner. AI drafts toddle
 - Swap slots from library history
 - Settings: likes, dislikes, allergies, servings, max cook time, kitchen notes
 - Gemini suggest/plan/replace with optional “feeling like…” context
+- Grocery lists: merge a week’s ingredients (sum matching units; separate lines when units differ, tagged by meal)
 
 ## Setup
 
